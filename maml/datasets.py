@@ -1,3 +1,4 @@
+import os
 import torch.nn.functional as F
 
 from collections import namedtuple
@@ -6,6 +7,7 @@ from torchmeta.toy import Sinusoid
 from torchmeta.transforms import ClassSplitter, Categorical, Rotation
 from torchvision.transforms import ToTensor, Resize, Compose
 
+from maml.snn_models import ModelSNN
 from maml.model import ModelConvOmniglot, ModelConvMiniImagenet, ModelMLPSinusoid
 from maml.utils import ToTensor1D
 
@@ -96,6 +98,62 @@ def get_benchmark_by_name(name,
                                          dataset_transform=dataset_transform)
 
         model = ModelConvMiniImagenet(num_ways, hidden_size=hidden_size)
+        loss_function = F.cross_entropy
+
+    elif name == 'doublenmnistsequence':
+        import numpy as np
+        from torchneuromorphic.doublenmnist_torchmeta.doublenmnist_dataloaders import (DoubleNMNIST,
+                                                                                       Compose,
+                                                                                       ClassNMNISTDataset,
+                                                                                       CropDims,
+                                                                                       Downsample,
+                                                                                       ToCountFrame,
+                                                                                       ToTensor)
+
+        data_dir = os.path.join(os.path.expanduser(folder), 'nmnist/n_mnist.hdf5')
+        
+        ds=2
+        size = [2, 32//ds, 32//ds]
+            
+        chunk_size = 100
+        dt = 1
+        transform = Compose([
+            CropDims(low_crop=[0,0], high_crop=[32,32], dims=[2,3]),
+            Downsample(factor=[dt,1,ds,ds]),
+            ToCountFrame(T = chunk_size, size = size),
+            ToTensor()])
+
+        target_transform = Categorical(num_ways)
+                
+        meta_train_dataset = ClassSplitter(DoubleNMNIST(root = data_dir,
+                                                        meta_train=True,
+                                                        transform = transform,
+                                                        target_transform = target_transform,
+                                                        chunk_size=chunk_size,
+                                                        num_classes_per_task=num_ways), 
+                                           num_train_per_class = num_shots, 
+                                           num_test_per_class = num_shots_test)
+        
+        meta_val_dataset = ClassSplitter(DoubleNMNIST(root = data_dir,
+                                                      meta_val=True,
+                                                      transform = transform,
+                                                      target_transform = target_transform,
+                                                      chunk_size=chunk_size,
+                                                      num_classes_per_task=num_ways),
+                                         num_train_per_class = num_shots,
+                                         num_test_per_class = num_shots_test)
+        
+        meta_test_dataset = ClassSplitter(DoubleNMNIST(root = data_dir,
+                                                       meta_test=True,
+                                                       transform = transform,
+                                                       target_transform = target_transform,
+                                                       chunk_size=chunk_size,
+                                                       num_classes_per_task=num_ways), 
+                                          num_train_per_class = num_shots, 
+                                          num_test_per_class = num_shots_test)
+
+
+        model = ModelSNN(np.prod(size), num_ways, hidden_sizes=[200])
         loss_function = F.cross_entropy
 
     else:
