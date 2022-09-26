@@ -8,7 +8,7 @@ import logging
 from torchmeta.utils.data import BatchMetaDataLoader
 
 from maml.datasets import get_benchmark_by_name
-from maml.metalearners import ModelAgnosticMetaLearning
+from maml.metalearners import ModelAgnosticMetaLearning, MetaETLP
 
 def main(args):
     logging.basicConfig(level=logging.DEBUG if args.verbose else logging.INFO)
@@ -33,6 +33,7 @@ def main(args):
         logging.info('Saving configuration file in `{0}`'.format(
                      os.path.abspath(os.path.join(folder, 'config.json'))))
 
+    logging.info('Loading dataset `{0}`'.format(args.dataset))
     benchmark = get_benchmark_by_name(args.dataset,
                                       args.folder,
                                       args.num_ways,
@@ -40,11 +41,14 @@ def main(args):
                                       args.num_shots_test,
                                       hidden_size=args.hidden_size)
 
+    logging.info('Creating train dataloader')
     meta_train_dataloader = BatchMetaDataLoader(benchmark.meta_train_dataset,
                                                 batch_size=args.batch_size,
                                                 shuffle=True,
                                                 num_workers=args.num_workers,
                                                 pin_memory=True)
+
+    logging.info('Creating validation dataloader')
     meta_val_dataloader = BatchMetaDataLoader(benchmark.meta_val_dataset,
                                               batch_size=args.batch_size,
                                               shuffle=True,
@@ -52,17 +56,30 @@ def main(args):
                                               pin_memory=True)
 
     meta_optimizer = torch.optim.Adam(benchmark.model.parameters(), lr=args.meta_lr)
-    metalearner = ModelAgnosticMetaLearning(benchmark.model,
-                                            meta_optimizer,
-                                            first_order=args.first_order,
-                                            num_adaptation_steps=args.num_steps,
-                                            step_size=args.step_size,
-                                            loss_function=benchmark.loss_function,
-                                            device=device)
+
+    logging.info('Creating MAML')
+    # If is spiking use MetaETLP
+    if args.dataset == 'doublenmnistsequence':
+        metalearner = MetaETLP( benchmark.model,
+                                meta_optimizer,
+                                first_order=args.first_order,
+                                num_adaptation_steps=args.num_steps,
+                                step_size=args.step_size,
+                                loss_function=benchmark.loss_function,
+                                device=device)
+    else:
+        metalearner = ModelAgnosticMetaLearning(benchmark.model,
+                                                meta_optimizer,
+                                                first_order=args.first_order,
+                                                num_adaptation_steps=args.num_steps,
+                                                step_size=args.step_size,
+                                                loss_function=benchmark.loss_function,
+                                                device=device)
 
     best_value = None
 
     # Training loop
+    logging.info('Training loop')
     epoch_desc = 'Epoch {{0: <{0}d}}'.format(1 + int(math.log10(args.num_epochs)))
     for epoch in range(args.num_epochs):
         metalearner.train(meta_train_dataloader,
@@ -104,7 +121,7 @@ if __name__ == '__main__':
     parser.add_argument('folder', type=str,
         help='Path to the folder the data is downloaded to.')
     parser.add_argument('--dataset', type=str,
-        choices=['sinusoid', 'omniglot', 'miniimagenet'], default='omniglot',
+        choices=['sinusoid', 'omniglot', 'miniimagenet', 'doublenmnistsequence'], default='doublenmnistsequence',
         help='Name of the dataset (default: omniglot).')
     parser.add_argument('--output-folder', type=str, default=None,
         help='Path to the output folder to save the model.')
