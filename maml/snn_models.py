@@ -27,6 +27,9 @@ class MetaLIF(MetaModule):
         self.register_buffer('decay', torch.exp(-1./torch.tensor(decay)))
 
         self.state = None
+    
+    def reset(self):
+        self.state = None
 
     def forward(self, inputs, params=None):
         I = self.layer(inputs, params=self.get_subdict(params, 'layer'))
@@ -49,15 +52,21 @@ class MetaSNNModel(MetaModule):
     def __init__(self, in_features, out_features, hidden_sizes, decay):
         super(MetaSNNModel, self).__init__()
 
+        layer_sizes = [in_features] + hidden_sizes
         self.LIFlayers = MetaSequential(OrderedDict([('LIFlayer{0}'.format(i + 1),
-            MetaLIF(hidden_size, hidden_sizes[i+1], decay)
-            ) for (i, hidden_size) in enumerate(hidden_sizes[:-1])]))
+            MetaLIF(hidden_size, layer_sizes[i+1], decay)
+            ) for (i, hidden_size) in enumerate(layer_sizes[:-1])]))
         self.classifier = MetaLIF(hidden_sizes[-1], out_features, decay)
 
     def forward(self, inputs, params=None):
-        features = self.LIFlayers(inputs, params=self.get_subdict(params, 'LIFlayers'))
+        features = self.LIFlayers(inputs.view(inputs.shape[0], -1), params=self.get_subdict(params, 'LIFlayers'))
         logits = self.classifier(features)
         return logits
+
+    def reset(self):
+        for layer in self.LIFlayers:
+            layer.reset()
+        self.classifier.reset()
 
 def ModelSNN(in_features, out_features, hidden_sizes=[400, 200, 128], decay=20.):
     return MetaSNNModel(in_features, out_features, hidden_sizes=hidden_sizes, decay=decay)

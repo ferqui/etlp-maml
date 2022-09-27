@@ -46,9 +46,9 @@ class MetaETLP(ModelAgnosticMetaLearning):
 
             with torch.set_grad_enabled(self.model.training):
                 test_logits=0
-                print(test_inputs.shape)
-                for t in range(test_inputs.shape[0]):
-                    test_logits += self.model(test_inputs, params=params)
+                self.model.reset()
+                for t in range(test_inputs.shape[1]):
+                    test_logits += self.model(test_inputs[:,t], params=params)
                 outer_loss = self.loss_function(test_logits, test_targets)
                 results['outer_losses'][task_id] = outer_loss.item()
                 mean_outer_loss += outer_loss
@@ -73,9 +73,9 @@ class MetaETLP(ModelAgnosticMetaLearning):
 
         for step in range(num_adaptation_steps):
             logits = 0
-            print(inputs.shape)
-            for t in range(inputs.shape[0]):
-                logits += self.model(inputs[t], params=params)
+            self.model.reset()
+            for t in range(inputs.shape[1]):
+                logits += self.model(inputs[:,t], params=params)
             inner_loss = self.loss_function(logits, targets)
             results['inner_losses'][step] = inner_loss.item()
 
